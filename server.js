@@ -1,101 +1,71 @@
 const express = require('express');
 const path = require('path');
+const puppeteer = require('puppeteer');
 const app = express();
 
-// Cấu hình Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Bộ nhớ tạm lưu trữ danh sách các tiến trình đang hoạt động
-let activeBoostTasks = {};
-
-/**
- * API Endpoint: Nhận thông tin cấu hình từ giao diện Control Panel
- */
-app.post('/api/start-boost', (req, res) => {
+app.post('/api/start-boost', async (req, res) => {
     const { link, server, views, time } = req.body;
 
-    // Kiểm tra tính hợp lệ của dữ liệu đầu vào
     if (!link) {
-        return res.status(400).json({ 
-            status: 'error', 
-            message: 'Vui lòng cung cấp đường dẫn Livestream hợp lệ!' 
-        });
+        return res.status(400).json({ status: 'error', message: 'Thiếu link livestream!' });
     }
 
-    // Tạo mã định danh cho tiến trình (Task ID)
-    const taskId = Date.now();
-    const parsedViews = parseInt(views, 10) || 0;
-    const parsedTime = parseInt(time, 10) || 0;
+    const parsedViews = parseInt(views, 10) || 1;
+    const parsedTime = parseInt(time, 10) || 5;
 
-    // Ghi nhận log hệ thống (hiển thị trên Deploy Logs của Railway)
-    console.log(`[${new Date().toISOString()}] [Task #${taskId}] Khởi tạo tiến trình mới`);
-    console.log(`- Link Livestream: ${link}`);
-    console.log(`- Gói Server chọn: ${server === 'vn' ? 'Mắt Việt Nam (Nội địa)' : 'Mắt Ngoại (Quốc tế)'}`);
-    console.log(`- Số lượng mắt yêu cầu: ${parsedViews}`);
-    console.log(`- Thời gian duy trì: ${parsedTime} phút`);
+    console.log(`[Worker] Bắt đầu mở ${parsedViews} luồng truy cập vào: ${link}`);
 
-    // Lưu trạng thái task vào bộ nhớ
-    activeBoostTasks[taskId] = {
-        link,
-        server,
-        views: parsedViews,
-        time: parsedTime,
-        status: 'Running',
-        createdAt: new Date()
-    };
+    // Phản hồi ngay lập tức về giao diện để tránh bị treo request
+    res.json({ status: 'success', message: 'Đã kích hoạt hệ thống luồng ẩn thành công!' });
 
-    // Kích hoạt tiến trình chạy ngầm xử lý
-    executeBoostProcess(taskId, link, server, parsedViews, parsedTime);
-
-    // Phản hồi về cho giao diện (Frontend)
-    return res.status(200).json({ 
-        status: 'success', 
-        message: 'Đã khởi tạo tiến trình hệ thống thành công!',
-        taskId: taskId
-    });
+    // Chạy tiến trình ngầm mở trình duyệt ảo
+    runBrowserBots(link, parsedViews, parsedTime);
 });
 
-/**
- * Hàm xử lý tiến trình ngầm (Worker Process)
- */
-function executeBoostProcess(taskId, link, server, views, time) {
-    let currentMinute = 0;
+async function runBrowserBots(targetLink, totalViews, durationMinutes) {
+    try {
+        // Giới hạn số lượng mở đồng thời trên cloud để tránh tràn RAM (ví dụ tối đa 3-5 luồng cho gói miễn phí)
+        const limitThreads = Math.min(totalViews, 3); 
 
-    const intervalTimer = setInterval(() => {
-        currentMinute++;
-        
-        console.log(`[Task #${taskId}] Đang duy trì [${views} mắt] qua server [${server.toUpperCase()}] - Phút thứ ${currentMinute}/${time}`);
+        for (let i = 0; i < limitThreads; i++) {
+            setTimeout(async () => {
+                console.log(`[Bot #${i+1}] Đang khởi động trình duyệt ẩn...`);
+                
+                const browser = await puppeteer.launch({
+                    headless: true,
+                    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                });
 
-        // =========================================================================
-        // KHU VỰC TÍCH HỢP MÃ NGUỒN MỞ RỘNG (NẾU CẦN KẾT NỐI THỰC TẾ):
-        // Tại đây, các lập trình viên thường cấu hình các worker hoặc gọi đến Pool Proxy 
-        // để giả lập các gói tin yêu cầu (HTTP/WebSocket Request) kết nối vào phòng live.
-        // =========================================================================
+                const page = await browser.newPage();
+                
+                // Giả lập giao diện thiết bị di động hoặc máy tính
+                await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                
+                try {
+                    console.log(`[Bot #${i+1}] Đang truy cập vào phòng live: ${targetLink}`);
+                    await page.goto(targetLink, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Kiểm tra điều kiện kết thúc thời gian duy trì
-        if (currentMinute >= time) {
-            clearInterval(intervalTimer);
-            if (activeBoostTasks[taskId]) {
-                activeBoostTasks[taskId].status = 'Completed';
-            }
-            console.log(`[Task #${taskId}] Đã hoàn thành thời gian chạy. Đã đóng toàn bộ phiên kết nối.`);
+                    // Duy trì kết nối trong khoảng thời gian cấu hình
+                    console.log(`[Bot #${i+1}] Đã vào phòng live thành công. Giữ kết nối trong ${durationMinutes} phút...`);
+                    await new Promise(resolve => setTimeout(resolve, durationMinutes * 60000));
+
+                } catch (err) {
+                    console.error(`[Bot #${i+1}] Lỗi kết nối trang:`, err.message);
+                } finally {
+                    await browser.close();
+                    console.log(`[Bot #${i+1}] Đã đóng trình duyệt.`);
+                }
+            }, i * 3000); // Mỗi bot cách nhau 3 giây để giảm tải
         }
-    }, 60000); // Thực hiện định kỳ mỗi 60 giây (1 phút)
+    } catch (error) {
+        console.error('Lỗi hệ thống khởi chạy bot:', error);
+    }
 }
 
-/**
- * API kiểm tra trạng thái các tiến trình đang chạy (Tuỳ chọn mở rộng)
- */
-app.get('/api/tasks-status', (req, res) => {
-    res.json({
-        status: 'success',
-        activeTasks
-    });
-});
-
-// Cấu hình cổng chạy ứng dụng (Ưu tiên lấy cổng từ môi trường đám mây như Railway, mặc định là 8080 hoặc 3000)
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log(`Hệ thống Control Panel đang vận hành ổn định tại cổng ${PORT}`);
+    console.log(`Server đang chạy tại cổng ${PORT}`);
 });
