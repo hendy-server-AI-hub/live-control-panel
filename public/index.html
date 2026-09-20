@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hệ thống Tăng Mắt Livestream</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 20px; }
+        .panel { max-width: 400px; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; }
+        input, select { width: 100%; padding: 8px; box-sizing: border-box; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; }
+        button { width: 100%; padding: 10px; background: #ff3b30; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #e03228; }
+    </style>
+</head>
+<body>
+
+<div class="panel">
+    <h3>Điều khiển Tăng Mắt Live</h3>
+    <div class="form-group">
+        <label>Đường dẫn Livestream:</label>
+        <input type="text" id="liveLink" placeholder="https://www.tiktok.com/@username/live">
+    </div>
+    <div class="form-group">
+        <label>Lựa chọn gói Server:</label>
+        <select id="serverType">
+            <option value="vn">Mắt Việt Nam (Server nội địa)</option>
+            <option value="global">Mắt Ngoại (Server quốc tế)</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Số lượng mắt xem:</label>
+        <input type="number" id="viewCount" value="100" min="10" max="5000">
+    </div>
+    <div class="form-group">
+        <label>Thời gian duy trì (Phút):</label>
+        <input type="number" id="duration" value="60" min="5" max="300">
+    </div>
+    <button onclick="startBoosting()">Bắt đầu chạy</button>
+</div>
+
+<script>
+    function startBoosting() {
+        const link = document.getElementById('liveLink').value;
+        const server = document.getElementById('serverType').value;
+        const views = document.getElementById('viewCount').value;
+        const time = document.getElementById('duration').value;
+
+        if (!link) {
+            alert('Vui lòng nhập đường dẫn livestream!');
+            return;
+        }
+
+        fetch('/api/start-boost', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ link, server, views, time })
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert('Đã khởi tạo tiến trình thành công!');
+        })
+        .catch(error => {
+            console.error('Lỗi kết nối:', error);
+        });
+    }
+</script>
+
+</body>
+</html>
